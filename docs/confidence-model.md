@@ -26,6 +26,7 @@ No diagnostic questions are mixed into practice. The only testing during practic
 - **Testing starts at the end** and moves down with **gap detection** (`gap_walk`):
   - **pass** → stop; everything below it counts as known;
   - **fail** → test its prerequisites, down to solid ground (skills that pass).
+  - **confidence:** pass/fail only once the smoothed rate over all rounds is clear (≥ 0.75 / ≤ 0.35); in between the skill is asked again next round.
 - **The lower bound moves.** If the walk fails at the bottom of the window, it keeps going below
   `start` until it hits solid ground.
 - **Below start, never reached by the walk** → assumed known (inferred).

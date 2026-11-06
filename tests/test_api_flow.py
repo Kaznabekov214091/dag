@@ -56,7 +56,7 @@ def seeded():
         conn.execute(
             text("INSERT INTO questions (node_id, content, answer, difficulty) VALUES (:n, :c, :a, :d)"),
             [{"n": int(s), "c": json.dumps({"text": f"q{s}-{d}-{i}"}), "a": json.dumps("x"), "d": d}
-             for s in skills["id"] for d in range(1, 6) for i in range(2)],
+             for s in skills["id"] for d in range(1, 4) for i in range(2)],
         )
     yield {"engine": engine, "teacher": teacher, "class": klass, "new": students[0], "mid": students[1],
            "skills": skills}

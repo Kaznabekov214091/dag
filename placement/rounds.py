@@ -5,8 +5,6 @@ student is not placed, every graded worksheet is a placement round. The window c
 questionnaire for round 1; later rounds recover its end skills from round 1 (its outermost skills).
 """
 from dataclasses import dataclass
-from statistics import mean
-
 import networkx as nx
 
 from config import settings as cfg
@@ -23,7 +21,7 @@ class PlacementState:
     window: Window
     walk: object           # skill_dag.gap_walk.GapWalk
     rounds_done: int
-    scores: dict           # {skill_id: [scores]} from all rounds, latest round wins
+    scores: dict           # {skill_id: [scores]} from all rounds together
 
     @property
     def finished(self):
@@ -41,11 +39,24 @@ def placement_state(navigator, profile, graded_rounds, form=None):
 
     scores = {}
     for round_items in graded_rounds:
-        scores.update(scores_by_skill(round_items))
-    results = {skill: mean(s) >= cfg.PASS_SCORE for skill, s in scores.items()}
+        for skill, s in scores_by_skill(round_items).items():
+            scores.setdefault(skill, []).extend(s)
+    # confidence: a skill is settled only when its smoothed rate is clearly high or clearly low;
+    # in between it stays pending and is asked again next round
+    results = {skill: verdict for skill, s in scores.items() if (verdict := placement_verdict(s)) is not None}
 
     walk = navigator.gap_walk(profile, window.end, results)
     return PlacementState(window, walk, len(graded_rounds), scores)
+
+
+def placement_verdict(scores):
+    """True = clearly passed, False = clearly failed, None = not sure yet (smoothed rate in between)."""
+    r = rate.rate(scores)
+    if r >= cfg.PLACEMENT_PASS_RATE:
+        return True
+    if r <= cfg.PLACEMENT_FAIL_RATE:
+        return False
+    return None
 
 
 def beginner_states(navigator):
@@ -92,7 +103,7 @@ def finish(navigator, profile, state, now):
     """
     updates, passed = {}, set(state.walk.passed)
     for skill, scores in state.scores.items():
-        if mean(scores) >= cfg.PASS_SCORE:     # look-ahead skills the walk never reached count too
+        if placement_verdict(scores):     # look-ahead skills the walk never reached count too
             passed.add(skill)
             updates[skill] = SkillState(
                 mastery=1.0, difficulty=rate.TOP_LEVEL, mastered_at=now, next_review_at=next_review(0, now),

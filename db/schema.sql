@@ -67,7 +67,7 @@ CREATE TABLE questions (
     node_id     int  NOT NULL REFERENCES skills(id),
     content     jsonb NOT NULL,   -- text, images
     answer      jsonb NOT NULL,
-    difficulty  smallint NOT NULL DEFAULT 1 CHECK (difficulty BETWEEN 1 AND 5)
+    difficulty  smallint NOT NULL DEFAULT 1 CHECK (difficulty BETWEEN 1 AND 3)   -- 1 easy, 2 medium, 3 hard
 );
 
 -- ===== Student mastery (adaptive profile) =====

@@ -79,7 +79,7 @@ Placement puts each student at the correct **starting point** on the DAG. After 
      - **end** = the Gate (or last skill) of the topics answered `partly`/`well`, keeping the outermost ones;
      - **start** = the Gates of the topics answered `well`: what lies behind them is assumed solid;
      - **window** = end + up to 2 prerequisite levels below it (`PLACEMENT_WINDOW_DEPTH`), never going behind start. It's short on purpose.
-2. **Placement rounds:** each round is one paper worksheet. Testing starts at end and moves down with gap detection: pass → stop, everything below counts as known; fail → test its prerequisites. Spare room on a sheet is filled with untested skills behind the ones being tested (look-ahead), staying inside the window.
+2. **Placement rounds:** each round is one paper worksheet. Testing starts at end and moves down with gap detection: pass → stop, everything below counts as known; fail → test its prerequisites. Spare room on a sheet is filled with untested skills behind the ones being tested (look-ahead), staying inside the window. Each skill is judged by its smoothed rate over all rounds: ≥ 0.75 clearly passed, ≤ 0.35 clearly failed, in between not sure yet, so it's asked again next round (2 of 2 passes, 0 of 2 fails, 1 of 2 is asked again).
 3. **The lower bound moves:** if the bottom of the window fails, the walk keeps going below it until it reaches skills the student passes.
 4. After each graded round the walk is **replayed** from all the scores so far. Placement finishes when nothing is left to test, or after 3 rounds.
 5. **Finishing placement** writes mastery rows:

@@ -3,7 +3,7 @@ import networkx as nx
 from config import settings as cfg
 from mastery.profile import MASTERED, StudentProfile
 from placement.form import PARTLY, WELL, PlacementForm, placement_window
-from placement.rounds import beginner_states, finish, next_round, placement_state
+from placement.rounds import beginner_states, finish, next_round, placement_state, placement_verdict
 
 from .conftest import NOW
 
@@ -88,3 +88,19 @@ def test_real_curriculum_finds_the_known_gap(algebra_nav):
     state, profile, _ = run_placement(algebra_nav, knows=lambda s: s not in missing, form=form, num_questions=40)
     assert state.walk.done and state.walk.gaps == (302,)
     assert all(profile.status(s) == MASTERED for s in state.walk.passed)
+
+
+def test_unclear_skill_is_asked_again():
+    assert placement_verdict([1, 1]) is True                  # 3/4 = 0.75
+    assert placement_verdict([0, 0]) is False                 # 1/4 = 0.25
+    assert placement_verdict([1, 0]) is None                  # 2/4 = 0.5: not sure
+    assert placement_verdict([1, 0, 1, 1]) is None            # 4/6 = 0.67
+    assert placement_verdict([1, 0, 0, 0]) is False           # 2/6 = 0.33
+
+
+def test_half_right_keeps_the_skill_pending(small_nav):
+    form = PlacementForm({"B": PARTLY})
+    state = placement_state(small_nav, StudentProfile(1), [[(13, 1), (13, 0)]], form)
+    assert 13 in state.walk.pending and not state.finished
+    state = placement_state(small_nav, StudentProfile(1), [[(13, 1), (13, 0)], [(13, 1), (13, 1), (13, 1), (13, 1)]], form)
+    assert 13 in state.walk.passed                            # 5 of 6 -> 6/8 = 0.75

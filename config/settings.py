@@ -31,7 +31,7 @@ STUCK_BELOW = 0.5             # ... and a rate below this -> stuck (backward gap
 
 WEAK_BELOW = 0.5              # mastery number below this = a gap when walking backward
 
-PASS_SCORE = 0.7   # average item score on one skill in one worksheet that counts as passing it (placement, reviews)
+PASS_SCORE = 0.7   # average item score on one skill in one worksheet that counts as passing a review
 
 # retention reviews: days until the next check, by review_level
 REVIEW_INTERVALS_DAYS = (1, 3, 7, 21, 60)
@@ -53,6 +53,8 @@ QUESTIONS_PER_SKILL = 2
 # ---------------------------------------------------------
 PLACEMENT_MAX_ROUNDS = 3
 PLACEMENT_DIFFICULTY = 2   # placement asks medium; failed -> practice starts at level 1
+PLACEMENT_PASS_RATE = 0.75  # smoothed rate at/above -> clearly passed (e.g. 2 of 2)
+PLACEMENT_FAIL_RATE = 0.35  # smoothed rate at/below -> clearly failed (e.g. 0 of 2, 1 of 4); in between -> ask again
 PLACEMENT_QUESTIONS_PER_SKILL = 2
 PLACEMENT_MAX_SKILLS_PER_ROUND = 8
 PLACEMENT_WINDOW_DEPTH = 2   # window = end skills + this many prerequisite levels below them

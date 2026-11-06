@@ -35,7 +35,8 @@ Every setting, in one place. Values can be read from environment variables where
 | `PREVIOUS_LEVEL_SHARE` | 0.3 of a skill's questions from the level below (level 2+) |
 | `STUCK_MIN_ANSWERS`, `STUCK_BELOW` | 5 answers and rate < 0.5 at the current level → `stuck` |
 | `WEAK_BELOW` | mastery number below this is weak, i.e. a gap (0.5) |
-| `PASS_SCORE` | average score on a skill in one worksheet that counts as passing (0.7); placement and reviews |
+| `PASS_SCORE` | average score on a skill in one worksheet that counts as passing a review (0.7) |
+| `PLACEMENT_PASS_RATE`, `PLACEMENT_FAIL_RATE` | placement confidence: smoothed rate ≥ 0.75 clearly passed, ≤ 0.35 clearly failed, in between asked again |
 | `REVIEW_INTERVALS_DAYS` | days until the next review, by `review_level` |
 | `FLAG_*` | flag names stored in `student_mastery.flags` |
 | `QUESTIONS_PER_SKILL` | default questions per skill on a sheet |
@@ -174,6 +175,7 @@ Built once from `load_dags()`. Holds `soft` and the combined `prerequisites` gra
 - **`PlacementState`**: `window`, `walk`, `rounds_done`, `scores` (all scores so far).
   - `finished`: at least one round done, and either nothing pending or the round limit reached.
 - **`placement_state(navigator, profile, graded_rounds, form=None)`**: rebuilds placement from the student's graded worksheets (oldest first). With no rounds yet, the window comes from the questionnaire; later, its end skills are the outermost skills of round 1, and the window is rebuilt from them (depth only, as start isn't stored).
+- **`placement_verdict(scores)`**: `True` clearly passed, `False` clearly failed, `None` not sure yet (asked again). Scores add up over all rounds.
 - **`beginner_states(navigator)`**: the rows for a beginner: one per root, flag `placement` (so the student is placed), no test.
 - **`next_round(navigator, profile, state, num_questions)`**: `{skill: question count}` for the next sheet. Pending skills come first (round 1: every end skill), then `look_ahead` fills the rest with untested skills behind them.
 - **`look_ahead(navigator, skills, window, depth)`**: skills behind `skills`, closest first; inside the window for skills in it, free below it once the walk has left the window.
