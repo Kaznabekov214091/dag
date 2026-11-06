@@ -1,0 +1,11 @@
+pandas
+openpyxl
+SQLAlchemy
+psycopg2-binary
+networkx
+fastapi
+uvicorn[standard]
+
+# dev
+pytest
+httpx
