@@ -2,9 +2,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
-
-from config import settings as cfg
+from pydantic import BaseModel
 
 
 class Skill(BaseModel):
@@ -44,25 +42,15 @@ class PlacementFormIn(BaseModel):
     answers: dict[str, Literal["dont_know", "partly", "well"]] = {}
 
 
-class WorksheetSettingsIn(BaseModel):
-    num_questions: int | None = Field(None, ge=1, le=100)   # None -> the assignment's num_questions
-    target_node_ids: list[int] = []
-    include_weak_prereqs: bool = True
-    max_depth: int = Field(cfg.DEFAULT_MAX_DEPTH, ge=0, le=10)
-    weak_below: float = Field(cfg.WEAK_BELOW, ge=0, le=1)
-
-
 class AssignmentIn(BaseModel):
     class_id: int
     teacher_id: int
     title: str
-    num_questions: int = Field(cfg.DEFAULT_NUM_QUESTIONS, ge=1, le=100)
     due_at: datetime | None = None
 
 
 class GenerateIn(BaseModel):
     student_ids: list[int] | None = None                  # None -> whole class
-    settings: WorksheetSettingsIn = WorksheetSettingsIn()
     placement_forms: dict[int, PlacementFormIn] = {}      # per student starting placement
 
 

@@ -1,8 +1,8 @@
 """Decides WHAT goes on one student's worksheet: {skill_id: question count}."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from config import settings as cfg
-from mastery.profile import MASTERED
+from mastery.profile import SkillState
 from placement.rounds import next_round, placement_state
 
 
@@ -11,87 +11,60 @@ class WorksheetPlan:
     kind: str                   # "placement" | "practice"
     skill_counts: dict          # {skill_id: number of questions}
     difficulty: int | None = None   # fixed difficulty (placement), None -> each node's level mix
+    state_updates: dict = field(default_factory=dict)   # {skill_id: SkillState} to save (window flags)
 
 
-def plan_worksheet(navigator, profile, settings, graded_rounds=(), form=None, now=None):
+def plan_worksheet(navigator, profile, graded_rounds=(), form=None):
     """A beginner (questionnaire: nothing known) must already have been given beginner_states."""
     if not profile.placed:
         state = placement_state(navigator, profile, list(graded_rounds), form)
         if state.window.beginner:
             raise ValueError("beginner: write placement.rounds.beginner_states first")
         if not state.finished:
-            return WorksheetPlan("placement", next_round(navigator, profile, state, settings.num_questions),
-                                 cfg.PLACEMENT_DIFFICULTY)
+            counts = next_round(navigator, profile, state, cfg.PLACEMENT_NUM_QUESTIONS)
+            return WorksheetPlan("placement", counts, cfg.PLACEMENT_DIFFICULTY)
 
-    if settings.target_node_ids:
-        skills = targeted_skills(navigator, profile, settings)
-        return WorksheetPlan("practice", fill(skills, settings.num_questions))
-
-    groups = practice_groups(navigator, profile, now)
-    return WorksheetPlan("practice", allocate(groups, settings.num_questions, cfg.WORKSHEET_MIX))
+    window, updates = update_window(navigator, profile)
+    return WorksheetPlan("practice", split_equally(window, cfg.PRACTICE_NUM_QUESTIONS), state_updates=updates)
 
 
-# ---------------------------------------------------------
-# Teacher picked target skills
-# ---------------------------------------------------------
-def targeted_skills(navigator, profile, settings):
-    """Targets first, then weak earlier skills within max_depth (weakest first)."""
-    targets = list(dict.fromkeys(settings.target_node_ids))
-    if not settings.include_weak_prereqs:
-        return targets
-    within = navigator.prerequisites_within(targets, settings.max_depth)
-    mastery = lambda s: profile.mastery(s) or 0.0
-    weak = sorted((s for s in within if mastery(s) < settings.weak_below), key=lambda s: (mastery(s), s))
-    return targets + weak
+def update_window(navigator, profile, size=cfg.WINDOW_SIZE):
+    """The practice window (skills flagged `window`) after refilling it: (window, {skill_id: SkillState}).
 
+    A node stays until it is mastered. A free place goes first to the next ready node in the same
+    topic as the mastered node that left (continue the stream), then to the queue: ready gaps, then
+    other ready nodes, lowest id (topic number) first. Ready = not mastered, every prerequisite mastered.
+    """
+    flagged = profile.flagged(cfg.FLAG_WINDOW)
+    window = [s for s in flagged if s not in profile.mastered]
+    left = [s for s in flagged if s in profile.mastered]
 
-# ---------------------------------------------------------
-# System picks: gaps -> next skills -> reviews
-# ---------------------------------------------------------
-def practice_groups(navigator, profile, now):
-    gaps = []
-    for skill in profile.flagged(cfg.FLAG_STUCK):
-        walk = navigator.gap_walk(profile, [skill], {skill: False})
-        gaps += list(walk.pending) + list(walk.gaps)   # probe unknown prerequisites, practise found gaps
-    gaps += [s for s in profile.flagged(cfg.FLAG_GAP) if profile.status(s) != MASTERED]
-    gaps = list(dict.fromkeys(gaps))
+    ready = sorted(navigator.next_skills(profile))
+    gaps = set(profile.flagged(cfg.FLAG_GAP))
+    queue = [s for s in ready if s in gaps] + [s for s in ready if s not in gaps]
+    topic = lambda s: navigator.node(s)["topic"]
 
-    taken = set(gaps)
-    nxt = [s for s in navigator.next_skills(profile) if s not in taken]
-    taken.update(nxt)
-    review = [s for s in profile.due_reviews(now) if s not in taken] if now else []
-    return {"gaps": gaps, "next": nxt, "review": review}
-
-
-def allocate(groups, num_questions, shares):
-    """Split questions over the non-empty groups by share, then fill each group's skills."""
-    active = [g for g in shares if groups.get(g)]
-    if not active:
-        return {}
-    total = sum(shares[g] for g in active)
-    quotas = {g: int(num_questions * shares[g] / total) for g in active}
-    for g in active[: num_questions - sum(quotas.values())]:
-        quotas[g] += 1
-
-    counts = {}
-    for g in active:
-        for skill, n in fill(groups[g], quotas[g]).items():
-            counts[skill] = counts.get(skill, 0) + n
-    return counts
-
-
-def fill(skills, num_questions, per_skill=cfg.QUESTIONS_PER_SKILL):
-    """Give skills (in priority order) `per_skill` questions each, then spread what is left one by one."""
-    counts, left = {}, num_questions
-    for skill in skills:
-        if left <= 0:
+    for gone in left:
+        stream = [s for s in queue if topic(s) == topic(gone) and s not in window]
+        if stream and len(window) < size:
+            window.append(stream[0])
+    for s in queue:
+        if len(window) >= size:
             break
-        counts[skill] = min(per_skill, left)
-        left -= counts[skill]
-    while left > 0 and counts:
-        for skill in list(counts):
-            if left <= 0:
-                break
-            counts[skill] += 1
-            left -= 1
-    return counts
+        if s not in window:
+            window.append(s)
+
+    updates = {s: replace(profile.skills[s], flags=profile.skills[s].flags - {cfg.FLAG_WINDOW}) for s in left}
+    for s in window:
+        if s not in flagged:
+            old = profile.skills.get(s, SkillState())
+            updates[s] = replace(old, flags=old.flags | {cfg.FLAG_WINDOW})
+    return window, updates
+
+
+def split_equally(nodes, num_questions):
+    """{node: count}: the questions split equally; any remainder goes to the first nodes."""
+    if not nodes:
+        return {}
+    each, extra = divmod(num_questions, len(nodes))
+    return {node: each + (i < extra) for i, node in enumerate(nodes)}

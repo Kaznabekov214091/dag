@@ -3,7 +3,7 @@ from sqlalchemy import text
 
 def fetch_assignment(conn, assignment_id):
     row = conn.execute(
-        text("SELECT id, class_id, teacher_id, title, num_questions, due_at FROM assignments WHERE id = :id"),
+        text("SELECT id, class_id, teacher_id, title, due_at FROM assignments WHERE id = :id"),
         {"id": assignment_id},
     ).mappings().first()
     if row is None:
@@ -11,14 +11,13 @@ def fetch_assignment(conn, assignment_id):
     return dict(row)
 
 
-def create_assignment(conn, class_id, teacher_id, title, num_questions, due_at=None):
+def create_assignment(conn, class_id, teacher_id, title, due_at=None):
     return conn.execute(
         text(
-            "INSERT INTO assignments (class_id, teacher_id, title, num_questions, due_at) "
-            "VALUES (:class_id, :teacher_id, :title, :num_questions, :due_at) RETURNING id"
+            "INSERT INTO assignments (class_id, teacher_id, title, due_at) "
+            "VALUES (:class_id, :teacher_id, :title, :due_at) RETURNING id"
         ),
-        {"class_id": class_id, "teacher_id": teacher_id, "title": title,
-         "num_questions": num_questions, "due_at": due_at},
+        {"class_id": class_id, "teacher_id": teacher_id, "title": title, "due_at": due_at},
     ).scalar_one()
 
 

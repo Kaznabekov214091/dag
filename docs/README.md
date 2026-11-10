@@ -12,10 +12,9 @@ Every file and function is described in [reference.md](reference.md).
  Teacher (frontend)                       Engine (this project)                     Postgres
  ──────────────────                       ─────────────────────                     ────────
  creates an assignment  ───────────────►  for each chosen student:
- (when, for whom,                           read profile ──────────────────────────► student_mastery
-  optional settings)                        not placed?  → placement round
-                                            placed?      → practice (gaps/next/reviews
-                                                           or the teacher's targets)
+ (when, for whom)                          read profile ──────────────────────────► student_mastery
+                                            not placed?  → placement round
+                                            placed?      → practice (the 3-node window)
                                             pick questions ─────────────────────────► questions
                                             save worksheet ─────────────────────────► worksheets, worksheet_items
  prints, students solve,
@@ -65,6 +64,7 @@ Every file and function is described in [reference.md](reference.md).
 | `gap` | found as a gap; practised until mastered |
 | `stuck` | rate under 50% after 5+ answers at the current level, which triggers backward gap detection |
 | `review_failed` | failed a retention review |
+| `window` | in the practice window (removed when the next sheet is made after it's mastered) |
 
 ---
 
@@ -90,18 +90,16 @@ Placement puts each student at the correct **starting point** on the DAG. After 
 
 No extra tables are needed. While a student isn't placed, every graded worksheet counts as a placement round.
 
-### Practice worksheet (no teacher target)
-Questions are split by `WORKSHEET_MIX` (default 40% / 40% / 20%):
-- **gaps:** skills flagged `gap`, plus, for every `stuck` skill, the gaps and untested prerequisites found by walking back from it;
-- **next:** unlocked skills, in soft curriculum order;
-- **reviews:** mastered skills whose review is due.
-
-If a group is empty, its share goes to the others.
-
-### Teacher-targeted worksheet
-The teacher chooses one or more skills and, optionally:
-- `include_weak_prereqs = false` → questions only from the chosen skills;
-- otherwise, earlier skills within `max_depth` steps back whose mastery is below `weak_below` are added (weakest first).
+### Practice worksheet: the working window
+- The student works on a **window of 3 nodes** (`WINDOW_SIZE`).
+- The window is **saved**: its nodes carry the `window` flag. A node stays until it is mastered; nothing pushes it out.
+- Only **ready** nodes enter: not mastered, every prerequisite mastered. A gap that isn't ready yet is skipped and enters later.
+- A free place (filled when the next sheet is made) goes to:
+  1. the next ready node in the **same topic** as the mastered node that left (stay on the track);
+  2. otherwise the queue: ready `gap` skills, then other ready skills, **lowest id (topic number) first** (switch track). E.g. after 804 Equations Mastery opens 901, 1101, 1401, 1701, 3501, the student goes to 901 first. To revisit after simulation.
+- A practice sheet has **15 questions** (`PRACTICE_NUM_QUESTIONS`), split equally over the window nodes (3 × 5).
+- Teachers can't change what is on a sheet or how many questions it has.
+- Not on sheets yet: reviews and `stuck` gap checks (rules still to come).
 
 The teacher can create the worksheet for **all students in the class or only some**. Each student still gets their own questions.
 
@@ -128,14 +126,14 @@ uvicorn api.main:app --reload                                   # open http://lo
 
 - **Database:** set with the `DB_URL` environment variable (default `postgresql+psycopg2://postgres:root@localhost:5432/dag`). Create the tables once with `psql -U postgres -d dag -f db/schema.sql`. That file is plain SQL. `skills` and `skill_prerequisites` are copied from the actual DB; the other tables come from the schema design.
 - **Frontend URLs:** allowed browser origins are set with `CORS_ORIGINS` (comma separated).
-- **Tuning:** every number (level rules, thresholds, review intervals, placement limits, worksheet mix) is in `config/settings.py`.
+- **Tuning:** every number (level rules, thresholds, review intervals, placement limits, window size, questions per sheet) is in `config/settings.py`.
 
 ### Tests
 ```bash
 pytest -q tests                      # logic only, no database needed
 TEST_DB_URL=postgresql+psycopg2://postgres:root@localhost:5432/dag_test pytest -q tests
 ```
-The second command also runs the full API flow (placement → practice → teacher targets) on a **throwaway** database. It drops and recreates every table in `TEST_DB_URL`.
+The second command also runs the full API flow (placement → practice) on a **throwaway** database. It drops and recreates every table in `TEST_DB_URL`.
 
 ---
 
@@ -150,8 +148,8 @@ The second command also runs the full API flow (placement → practice → teach
 | `GET /students/{id}/next-skills` | unlocked skills (forward) |
 | `GET /students/{id}/path/{target}` | ordered skills to learn to reach a target |
 | `GET /students/{id}/gaps/{skill}` | backward gap report for a skill the student is failing |
-| `POST /assignments` | create an assignment (class, title, number of questions, due date) |
-| `POST /assignments/{id}/worksheets` | generate worksheets: students (default all), settings, placement questionnaire answers |
+| `POST /assignments` | create an assignment (class, title, due date) |
+| `POST /assignments/{id}/worksheets` | generate worksheets: students (default all), placement questionnaire answers |
 | `GET /worksheets/{id}` | a worksheet's questions, with skill and difficulty |
 | `POST /worksheets/{id}/scores` | submit graded scores, which updates mastery |
 

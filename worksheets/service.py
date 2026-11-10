@@ -10,7 +10,6 @@ from placement.rounds import beginner_states, finish, placement_state
 from . import repository as repo
 from .builder import build_items
 from .selector import plan_worksheet
-from .settings import WorksheetSettings
 
 
 @dataclass
@@ -37,20 +36,18 @@ class WorksheetService:
         self.engine = engine
         self.navigator = navigator
 
-    def generate(self, assignment_id, student_ids=None, settings=None, forms=None, now=None):
+    def generate(self, assignment_id, student_ids=None, forms=None):
         """One worksheet per student. `student_ids=None` -> the whole class.
 
         `forms`: {student_id: PlacementForm} questionnaire for students starting placement
         (missing or nothing known -> beginner: no test, starts at the roots).
         """
-        now = now or datetime.now(timezone.utc)
         forms = forms or {}
         results = []
         with self.engine.begin() as conn:
             assignment = repo.fetch_assignment(conn, assignment_id)
             if student_ids is None:
                 student_ids = repo.class_student_ids(conn, assignment["class_id"])
-            settings = settings or WorksheetSettings(num_questions=assignment["num_questions"])
 
             for student_id in student_ids:
                 profile = fetch_profile(conn, student_id)
@@ -61,7 +58,8 @@ class WorksheetService:
                     updates = beginner_states(self.navigator)
                     save_states(conn, student_id, updates)
                     profile = profile.with_states(updates)
-                plan = plan_worksheet(self.navigator, profile, settings, rounds, forms.get(student_id), now)
+                plan = plan_worksheet(self.navigator, profile, rounds, forms.get(student_id))
+                save_states(conn, student_id, plan.state_updates)
                 items, short = build_items(conn, self.navigator, profile, plan)
                 worksheet_id = repo.create_worksheet(conn, assignment_id, student_id, items)
                 results.append(GeneratedWorksheet(student_id, worksheet_id, plan.kind, len(items), short))

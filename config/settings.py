@@ -42,15 +42,12 @@ FLAG_INFERRED = "inferred"          # mastered by inference: lies behind a skill
 FLAG_GAP = "gap"                    # found as a gap; practised until mastered
 FLAG_STUCK = "stuck"                # rate too low at the current level -> backward gap detection
 FLAG_REVIEW_FAILED = "review_failed"
-
-# ---------------------------------------------------------
-# Questions
-# ---------------------------------------------------------
-QUESTIONS_PER_SKILL = 2
+FLAG_WINDOW = "window"              # in the practice window (stays until mastered)
 
 # ---------------------------------------------------------
 # Placement (beginners skip it and start at the roots)
 # ---------------------------------------------------------
+PLACEMENT_NUM_QUESTIONS = 10   # questions per placement sheet
 PLACEMENT_MAX_ROUNDS = 3
 PLACEMENT_DIFFICULTY = 2   # placement asks medium; failed -> practice starts at level 1
 PLACEMENT_PASS_RATE = 0.75  # smoothed rate at/above -> clearly passed (e.g. 2 of 2)
@@ -62,7 +59,8 @@ PLACEMENT_WINDOW_DEPTH = 2   # window = end skills + this many prerequisite leve
 # ---------------------------------------------------------
 # Worksheets
 # ---------------------------------------------------------
-DEFAULT_NUM_QUESTIONS = 10
-DEFAULT_MAX_DEPTH = 2
-# share of questions per group when the teacher picks no target skills
-WORKSHEET_MIX = {"gaps": 0.4, "next": 0.4, "review": 0.2}
+# Practice: a window of WINDOW_SIZE nodes (flag `window`); a node leaves when mastered. Free places: same topic
+# as the node that left first (continue the stream), then ready gaps, then other ready nodes, lowest id first.
+# Teachers can't change what is on a sheet or how many questions it has.
+WINDOW_SIZE = 3
+PRACTICE_NUM_QUESTIONS = 15   # split equally over the window nodes (3 x 5)

@@ -39,10 +39,11 @@ Every setting, in one place. Values can be read from environment variables where
 | `PLACEMENT_PASS_RATE`, `PLACEMENT_FAIL_RATE` | placement confidence: smoothed rate ≥ 0.75 clearly passed, ≤ 0.35 clearly failed, in between asked again |
 | `REVIEW_INTERVALS_DAYS` | days until the next review, by `review_level` |
 | `FLAG_*` | flag names stored in `student_mastery.flags` |
-| `QUESTIONS_PER_SKILL` | default questions per skill on a sheet |
 | `PLACEMENT_DIFFICULTY` | placement questions are medium (2) |
+| `PLACEMENT_NUM_QUESTIONS` | questions per placement sheet (10) |
 | `PLACEMENT_MAX_ROUNDS`, `PLACEMENT_QUESTIONS_PER_SKILL`, `PLACEMENT_MAX_SKILLS_PER_ROUND`, `PLACEMENT_WINDOW_DEPTH` | placement limits; the window is end + this many prerequisite levels |
-| `DEFAULT_NUM_QUESTIONS`, `DEFAULT_MAX_DEPTH`, `WORKSHEET_MIX` | worksheet defaults |
+| `WINDOW_SIZE` | nodes in the practice window (3) |
+| `PRACTICE_NUM_QUESTIONS` | questions per practice sheet, split equally over the window (15) |
 
 ## `db/`
 ### `connection.py`
@@ -152,6 +153,7 @@ Built once from `load_dags()`. Holds `soft` and the combined `prerequisites` gra
 - **`seen_question_ids(conn, student_id)`**: every question already put on any of the student's worksheets.
 
 ### `picker.py`
+- **`pick_for_blueprint(conn, student_id, slots)`**: one question per blueprint slot (node, difficulty), using `pick_questions`. Returns `[(slot, question_id)]` in slot order; slots the pool can't fill are left out.
 - **`pick_questions(conn, node_id, count, difficulty, seen, picked)`**: unseen questions first. If the pool runs out it repeats older ones, but never one already on this sheet (`picked`).
 
 ---
@@ -188,29 +190,25 @@ Built once from `load_dags()`. Holds `soft` and the combined `prerequisites` gra
 
 ## `worksheets/`
 
-### `settings.py`
-- **`WorksheetSettings`**: the teacher's choices: `num_questions`, `target_node_ids` (empty = the system picks), `include_weak_prereqs`, `max_depth`, `weak_below`.
-
 ### `selector.py`: decides WHAT
 - **`WorksheetPlan`**: `kind` (`"placement"` / `"practice"`), `skill_counts` (`{skill: n}`) and `difficulty` (`None` = from mastery).
-- **`plan_worksheet(navigator, profile, settings, graded_rounds=(), form=None, now=None)`**:
-  1. not placed → the next placement round (a beginner must already have `beginner_states`);
-  2. teacher targets → `targeted_skills`;
-  3. otherwise → the gaps / next / reviews mix.
-- **`targeted_skills(navigator, profile, settings)`**: the targets, then weak earlier skills within `max_depth` (weakest first), unless `include_weak_prereqs` is off.
-- **`practice_groups(navigator, profile, now)`**: `{"gaps", "next", "review"}` lists:
-  - gaps = `gap`-flagged skills, plus walks back from `stuck` skills;
-  - next = unlocked skills;
-  - review = mastered skills that are due.
-- **`allocate(groups, num_questions, shares)`**: splits the question count between the non-empty groups by share.
-- **`fill(skills, num_questions, per_skill)`**: gives each skill, in priority order, `per_skill` questions, then spreads what's left one by one.
+- **`plan_worksheet(navigator, profile, graded_rounds=(), form=None)`**:
+  1. not placed → the next placement round, `PLACEMENT_NUM_QUESTIONS` (a beginner must already have `beginner_states`);
+  2. otherwise → practice: `update_window`, `PRACTICE_NUM_QUESTIONS` split equally.
+- **`update_window(navigator, profile, size=WINDOW_SIZE)`**: `(window, {skill: SkillState})`. Keeps the `window`-flagged nodes that aren't mastered; drops the flag from mastered ones; fills free places with the next ready node in the same topic as a node that left, then ready gaps, then other ready nodes, lowest id first. The updates (flags) are saved by `service.generate`.
+- **`WorksheetPlan.state_updates`**: the window flag changes to save.
+- **`split_equally(nodes, num_questions)`**: `{node: count}`, equal shares; any remainder goes to the first nodes.
+
+### `blueprint.py`
+- **`Slot(node_id, difficulty)`**: one question still to pick.
+- **`blueprint(navigator, profile, plan)`**: the list of slots for the sheet, prerequisites first. Each node's slots are split over difficulties by its level in the profile (`level_mix`), or all at the plan's fixed difficulty (placement).
 
 ### `builder.py`
-- **`WorksheetItem(position, question_id, node_id)`**: one numbered question.
-- **`build_items(conn, navigator, profile, plan)`**: turns the plan into numbered questions, prerequisites first. Returns `(items, short)`; `short` lists skills that got fewer questions than planned because the pool was too small.
+- **`WorksheetItem(position, question_id, node_id, difficulty)`**: one numbered question.
+- **`build_items(conn, navigator, profile, plan)`**: plan → `blueprint` → `pick_for_blueprint` → numbered questions. Returns `(items, short)`; `short` lists skills that got fewer questions than planned because the pool was too small.
 
 ### `repository.py`
-- **`fetch_assignment(conn, id)`** / **`create_assignment(conn, class_id, teacher_id, title, num_questions, due_at)`**.
+- **`fetch_assignment(conn, id)`** / **`create_assignment(conn, class_id, teacher_id, title, due_at)`** (`assignments.num_questions` is no longer used).
 - **`class_student_ids(conn, class_id)`**: the students in a class.
 - **`create_worksheet(conn, assignment_id, student_id, items)`**: inserts the worksheet and its items, and returns the id.
 - **`fetch_worksheet(conn, id)`**: the header plus items, each with its question's skill and difficulty, score and feedback.
@@ -220,7 +218,7 @@ Built once from `load_dags()`. Holds `soft` and the combined `prerequisites` gra
 - **`answer_history(conn, student_id, node_ids)`**: `{skill: [(difficulty, score), ...]}`, every graded answer on those skills, oldest first.
 
 ### `service.py`: `WorksheetService(engine, navigator)`
-- **`generate(assignment_id, student_ids=None, settings=None, forms=None, now=None)`**: one worksheet per student (default: the whole class), in one transaction. Returns `GeneratedWorksheet` objects (`student_id`, `worksheet_id`, `kind`, `num_questions`, `short_skills`).
+- **`generate(assignment_id, student_ids=None, forms=None)`**: one worksheet per student (default: the whole class), in one transaction. Returns `GeneratedWorksheet` objects (`student_id`, `worksheet_id`, `kind`, `num_questions`, `short_skills`).
 - **`evaluate(worksheet_id, now=None)`**: the scores must already be stored.
   - **placement:** replays the rounds and, if finished, writes the placement results;
   - **practice:** loads the answer history and updates levels and rates.
@@ -281,7 +279,7 @@ Errors: `404` not found, `422` bad input, `409` already evaluated.
 - **`test_mastery.py`**: smoothed rate, level up (never down), level mix, mastered at level 3, stuck, reviews.
 - **`test_graph.py`**: the soft fallback, the gap walk, forward moves, depth limits, import cycle check.
 - **`test_placement.py`**: simulated students through paper rounds (beginner without a test, window and start, lower bound moving below the window, round limit, the real curriculum).
-- **`test_selector.py`**: question allocation, placement plan, teacher targets, stuck-skill gaps, reviews.
+- **`test_selector.py`**: window (gaps first, not-ready skipped, stays until mastered, same-topic stream, lowest topic number), equal split, placement plan, blueprint.
 - **`test_api_flow.py`**: end to end on a throwaway DB (only with `TEST_DB_URL`). It **drops all tables** there.
 
 ## `debug/` (not part of the app)

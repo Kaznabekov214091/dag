@@ -1,8 +1,9 @@
+from collections import Counter
 from dataclasses import dataclass
 
-from mastery.rate import level_mix
-from questions.picker import pick_questions
-from questions.repository import seen_question_ids
+from questions.picker import pick_for_blueprint
+
+from .blueprint import blueprint
 
 
 @dataclass(frozen=True)
@@ -14,24 +15,14 @@ class WorksheetItem:
 
 
 def build_items(conn, navigator, profile, plan):
-    """Turn a plan into numbered questions, prerequisites first.
-
-    Each node's questions are split over difficulties by its level (`level_mix`), unless the plan fixes one.
+    """Plan -> blueprint (node, difficulty per question) -> questions picked from the pool.
 
     Returns (items, short): `short` lists skills that got fewer questions than planned (pool too small).
     """
-    seen = seen_question_ids(conn, profile.student_id)
-    picked, items, short = set(), [], []
+    slots = blueprint(navigator, profile, plan)
+    picked = pick_for_blueprint(conn, profile.student_id, slots)
+    items = [WorksheetItem(i + 1, q, slot.node_id, slot.difficulty) for i, (slot, q) in enumerate(picked)]
 
-    for skill in navigator.order(plan.skill_counts):
-        wanted = plan.skill_counts[skill]
-        mix = {plan.difficulty: wanted} if plan.difficulty else level_mix(profile.level(skill), wanted)
-        got = 0
-        for difficulty, count in mix.items():
-            ids = pick_questions(conn, skill, count, difficulty, seen, picked)
-            picked.update(ids)
-            got += len(ids)
-            items += [WorksheetItem(len(items) + i + 1, q, skill, difficulty) for i, q in enumerate(ids)]
-        if got < wanted:
-            short.append(skill)
+    got = Counter(item.node_id for item in items)
+    short = [node for node in dict.fromkeys(s.node_id for s in slots) if got[node] < plan.skill_counts[node]]
     return items, short

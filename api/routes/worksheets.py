@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from placement.form import PlacementForm
 from worksheets import repository as repo
-from worksheets.settings import WorksheetSettings
 
 from .. import deps
 from ..schemas import (AssignmentIn, EvaluationOut, GenerateIn, GeneratedWorksheetOut, ScoresIn,
@@ -14,21 +13,15 @@ router = APIRouter(tags=["assignments & worksheets"])
 @router.post("/assignments", response_model=int)
 def create_assignment(body: AssignmentIn, engine=Depends(deps.engine)):
     with engine.begin() as conn:
-        return repo.create_assignment(conn, body.class_id, body.teacher_id, body.title,
-                                      body.num_questions, body.due_at)
+        return repo.create_assignment(conn, body.class_id, body.teacher_id, body.title, body.due_at)
 
 
 @router.post("/assignments/{assignment_id}/worksheets", response_model=list[GeneratedWorksheetOut])
 def generate_worksheets(assignment_id: int, body: GenerateIn, service=Depends(deps.worksheet_service)):
-    """One worksheet per chosen student (default: the whole class); questions picked per student."""
-    s = body.settings
+    """One worksheet per chosen student (default: the whole class); the engine decides what is on it."""
     try:
-        with service.engine.connect() as conn:
-            num_questions = s.num_questions or repo.fetch_assignment(conn, assignment_id)["num_questions"]
-        settings = WorksheetSettings(num_questions, tuple(s.target_node_ids), s.include_weak_prereqs,
-                                     s.max_depth, s.weak_below)
         forms = {sid: PlacementForm(dict(f.answers)) for sid, f in body.placement_forms.items()}
-        generated = service.generate(assignment_id, body.student_ids, settings, forms)
+        generated = service.generate(assignment_id, body.student_ids, forms)
     except LookupError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:

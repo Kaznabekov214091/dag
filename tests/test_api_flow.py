@@ -72,7 +72,7 @@ def client(seeded):
 
 def new_assignment(client, seeded, title):
     r = client.post("/assignments", json={"class_id": seeded["class"], "teacher_id": seeded["teacher"],
-                                          "title": title, "num_questions": 10})
+                                          "title": title})
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -119,20 +119,21 @@ def test_full_cycle(client, seeded):
     assert sheets[seeded["mid"]]["kind"] == "practice"
     items = client.get(f"/worksheets/{sheets[seeded['mid']]['worksheet_id']}").json()["items"]
     assert 302 in {it["node_id"] for it in items}
+    profile = client.get(f"/students/{seeded['mid']}/profile").json()
+    window = {x["node_id"] for x in profile["skills"] if "window" in x["flags"]}
+    assert 302 in window and window == {it["node_id"] for it in items}     # the window is saved
     before = {s["node_id"]: s["mastery"] for s in mid["skills"]}[302]
     result = answer(client, sheets[seeded["mid"]]["worksheet_id"], lambda s: True)
     assert result["kind"] == "practice" and 302 in result["updated_skills"]
     after = {s["node_id"]: s["mastery"] for s in client.get(f"/students/{seeded['mid']}/profile").json()["skills"]}[302]
     assert after > before
 
-    # teacher: one student only, only the selected skill
-    a = new_assignment(client, seeded, "targeted")
-    r = client.post(f"/assignments/{a}/worksheets", json={
-        "student_ids": [seeded["new"]],
-        "settings": {"target_node_ids": [1911], "include_weak_prereqs": False, "num_questions": 4}})
+    # one student only
+    a = new_assignment(client, seeded, "one student")
+    r = client.post(f"/assignments/{a}/worksheets", json={"student_ids": [seeded["new"]]})
     (w,) = r.json()
     items = client.get(f"/worksheets/{w['worksheet_id']}").json()["items"]
-    assert {it["node_id"] for it in items} == {1911} and len(items) == 4
+    n = len(items)
 
     # read-only moves
     assert client.get(f"/students/{seeded['new']}/next-skills").status_code == 200
@@ -142,5 +143,5 @@ def test_full_cycle(client, seeded):
     # incomplete scores are refused without saving; scoring twice is refused
     path = f"/worksheets/{w['worksheet_id']}/scores"
     assert client.post(path, json={"scores": {"1": 1}}).status_code == 422
-    assert client.post(path, json={"scores": {str(p): 1 for p in range(1, 5)}}).status_code == 200
-    assert client.post(path, json={"scores": {str(p): 1 for p in range(1, 5)}}).status_code == 409
+    assert client.post(path, json={"scores": {str(p): 1 for p in range(1, n + 1)}}).status_code == 200
+    assert client.post(path, json={"scores": {str(p): 1 for p in range(1, n + 1)}}).status_code == 409
